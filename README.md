@@ -22,7 +22,7 @@ TBD
     $ docker-compose logs
 
 If you deploy the app for the first time you may need to restore the database
-from a backup for each app and adapt the database connection settings!
+from a backup!
 
 ### Debug (aka. go inside) an image
 
@@ -34,7 +34,10 @@ from a backup for each app and adapt the database connection settings!
 If you start this orchestration for the first time, a handy feature is to
 import your old data. If you're e.g. moving everything to another server
 you can put your database backups into the tmp folder and the db initscript
-will pick them up automagically on the first run.
+will pick them up automagically on the first run if there is no `data` folder
+
+
+    1. Approach with a dump file and tgz archive
 
     # move your crowd db backup file to tmp (filename is important).
     $ mv crowd.dump tmp/crowd.dump
@@ -42,21 +45,58 @@ will pick them up automagically on the first run.
     # unpack your crowd-home backup archive
     $ tar xzf crowd-home.tgz --strip=1 -C home
 
-### Backup the home folders
 
-    $ mkdir -p backup/$(date +%F)
-      tar czf backup/$(date +%F)/crowd-home.tgz home
+    2. Approach with bup
 
-### Backup the PostgreSQL data
+    # remove theses folder if present:
+    $ data/ tmp/ home/ dumps/
 
-    # backup the crowd database
-    $ docker run -it --rm --link atlassian_database_1:db -v $(pwd):/tmp \
-        postgres sh -c 'pg_dump -U crowd -h "$DB_PORT_5432_TCP_ADDR" \
-        -w crowd > /tmp/crowd.dump'
+    # move contents from the bup backup.
+    $ sudo mv crowdbackup/crowd/* /srv/data/crowd
 
 ### Restore the PostgreSQL data
 
-    # restore the crowd database backup
-    $ docker run -it --rm --link atlassian_database_1:db -v $(pwd):/tmp \
-        postgres sh -c 'pg_restore -U crowd -h "$DB_PORT_5432_TCP_ADDR" \
-        -n public -w -d crowd /tmp/crowd.dump'
+To restore the postresql data you have two options:
+
+    1. Remove the `data` folder and put the dumpfile into `tmp`
+    2. Replace the `data` folder with a bup backuped `data` folder
+
+## Restoring with the fabfile or bup
+
+    # All commands have to be launched from within the root folder of the app.
+    $ /srv/data/crowd
+
+Once you have run the restore command, you have to remove `data/ tmp/ dumps/ home/`
+Move the folders from the created crowdbackup folder into the app root (where the deleted folders used to be).
+
+### Show all possible restore points:
+
+    sudo BUP_DIR=$(pwd)/backup bup ls crowdbackup`
+
+### Restore latest backup:
+
+    # With the fabfile:
+    $ sudo fab restore
+
+    # Without the fabfile:
+    $ sudo BUP_DIR=$(pwd)/backup bup restore
+
+### Restore a specific backup:
+
+    # With the fabfile:
+    $ sudo fab restore:revision='2015-03-26-123711'
+
+    # Without the fabfile:
+    $ sudo BUP_DIR=$(pwd)/backup bup restore crowdbackup/2015-03-26-123711/$(pwd)
+
+### Restore to a different folder than crowdbackup
+
+By default bup will restore the backup to a folder called crowdbackup.
+To restore to another folder you can use the `-C` flag or pass `'destination'`
+to the fabfile.
+
+    # With the fabfile:
+    $ sudo fab restore:destination='anotherlocation'
+
+    # Without the fabfile:
+    $ sudo BUP_DIR=$(pwd)/backup bup restore -C anotherlocation crowdbackup/latest/$(pwd)
